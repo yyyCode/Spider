@@ -1,0 +1,16 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+
+# Playwright
+/test-results/
+/playwright-report/
+/blob-report/
+
+# Project specific
+videos/
+*.mp4
+
+# VS Code
+.vscode/
