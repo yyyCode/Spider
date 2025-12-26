@@ -12,9 +12,9 @@
 
 ## 📥 下载地址
 
-请前往本仓库的 [Releases 页面](https://github.com/yyyCode/spider/releases) 下载最新版本的 `DouyinDownloader.zip`。
+请前往本仓库的 [Releases 页面](https://github.com/yyyCode/spider/releases) 下载最新版本的 `DouyinDownloader.exe`。
 
-> **注意**：下载后解压，直接运行文件夹内的 `DouyinDownloader.exe` 即可。首次运行无需联网下载组件。
+> **注意**：下载后直接运行 `DouyinDownloader.exe` 即可。由于集成了浏览器组件，文件体积较大（约 300MB+），且首次启动需要解压，可能需要等待几秒钟，请耐心等待。
 
 ## 🛠️ 本地开发与运行
 
@@ -61,9 +61,9 @@ python cli.py "你的分享链接"
    pip install pyinstaller
    ```
 
-2. 运行打包命令（包含所有依赖）：
+2. 运行打包命令（单文件 EXE，包含所有依赖）：
    ```bash
-   pyinstaller --noconfirm --onedir --windowed --name "DouyinDownloader" --icon "NONE" --hidden-import "playwright" --add-data "stealth.min.js;." --add-data "C:\Users\86178\AppData\Local\ms-playwright\chromium-1200;ms-playwright/chromium-1200" --add-data "C:\Users\86178\AppData\Local\ms-playwright\ffmpeg-1011;ms-playwright/ffmpeg-1011" --add-data "C:\Users\86178\AppData\Local\ms-playwright\chromium_headless_shell-1200;ms-playwright/chromium_headless_shell-1200" gui_app.py
+   pyinstaller --noconfirm --onefile --windowed --name "DouyinDownloader" --icon "NONE" --hidden-import "playwright" --add-data "stealth.min.js;." --add-data "C:\Users\86178\AppData\Local\ms-playwright\chromium-1200;ms-playwright/chromium-1200" --add-data "C:\Users\86178\AppData\Local\ms-playwright\ffmpeg-1011;ms-playwright/ffmpeg-1011" --add-data "C:\Users\86178\AppData\Local\ms-playwright\chromium_headless_shell-1200;ms-playwright/chromium_headless_shell-1200" gui_app.py
    ```
    *(注意：上述命令中的路径可能需要根据你的实际 Playwright 安装位置进行调整)*
 
