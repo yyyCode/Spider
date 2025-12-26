@@ -2,6 +2,12 @@
 
 一个基于 Python Playwright 和 CustomTkinter 的抖音视频下载工具。
 
+## exe使用教程
+打开exe文件，复制链接进去，点击下载
+![alt text](455.png)
+
+
+
 ## ✨ 功能特点
 
 *   **GUI 图形界面**：简洁美观的界面，操作简单。
@@ -66,6 +72,9 @@ python cli.py "你的分享链接"
    pyinstaller --noconfirm --onefile --windowed --name "DouyinDownloader" --icon "NONE" --hidden-import "playwright" --add-data "stealth.min.js;." --add-data "C:\Users\86178\AppData\Local\ms-playwright\chromium-1200;ms-playwright/chromium-1200" --add-data "C:\Users\86178\AppData\Local\ms-playwright\ffmpeg-1011;ms-playwright/ffmpeg-1011" --add-data "C:\Users\86178\AppData\Local\ms-playwright\chromium_headless_shell-1200;ms-playwright/chromium_headless_shell-1200" gui_app.py
    ```
    *(注意：上述命令中的路径可能需要根据你的实际 Playwright 安装位置进行调整)*
+
+
+
 
 ## 📝 License
 
