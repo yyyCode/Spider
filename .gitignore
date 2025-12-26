@@ -8,9 +8,16 @@ __pycache__/
 /playwright-report/
 /blob-report/
 
+# Distribution / Packaging
+dist/
+build/
+*.spec
+
 # Project specific
 videos/
 *.mp4
+browsers/
+ms-playwright/
 
 # VS Code
 .vscode/

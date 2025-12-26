@@ -1,113 +1,185 @@
 import re
 import time
 import os
+import sys
+
+# 同样在爬虫模块中设置环境变量，确保独立运行时或被调用时都能找到浏览器
+# 必须在导入 playwright 之前设置
+# 仅在打包环境下强制设置，开发环境下如果不设置则使用默认（通常是用户目录）
+if getattr(sys, 'frozen', False):
+    if "PLAYWRIGHT_BROWSERS_PATH" not in os.environ:
+        base_path = sys._MEIPASS
+        os.environ["PLAYWRIGHT_BROWSERS_PATH"] = os.path.join(base_path, "ms-playwright")
+else:
+    # 开发环境：如果未设置，尝试显式指定为默认路径，或者不设置让其自动寻找
+    # 这里我们打印一下，方便调试
+    pass
+
 import requests
 from playwright.sync_api import sync_playwright
 
 class DouyinSpider:
-    def __init__(self, url):
+    def __init__(self, url, headless=True, log_callback=None):
         self.url = url
+        self.headless = headless
+        self.log_callback = log_callback
         self.headers = {
-            "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/110.0.0.0 Safari/537.36",
+            "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
             "Referer": "https://www.douyin.com/"
         }
-        self.video_url = None
-        self.save_dir = "videos"  # 设置保存目录
-        
-        # 确保保存目录存在
+        self.video_candidates = [] # 存储所有候选视频
+        self.save_dir = "videos"
+
         if not os.path.exists(self.save_dir):
             os.makedirs(self.save_dir)
-            print(f"已创建下载目录: {self.save_dir}")
+            self.log(f"已创建下载目录: {self.save_dir}")
+
+    def log(self, message):
+        if self.log_callback:
+            self.log_callback(message)
+        else:
+            print(f"[Spider] {message}")
 
     def handle_response(self, response):
         """
         监听网络响应，获取视频流地址
         """
-        # 过滤出视频响应，通常包含 .mp4 或者 content-type 是 video
-        if '.mp4' in response.url or 'video/mp4' in response.headers.get('content-type', ''):
-            # 排除一些可能是广告或者封面的链接，尽量获取长链接
-            if not self.video_url:
-                print(f"发现视频流地址: {response.url[:60]}...")
-                self.video_url = response.url
+        try:
+            # 抖音视频流通常是 .mp4 结尾或者 content-type 为 video/mp4
+            # 或者是 blob 链接（但 blob 无法直接 requests 下载，这里主要关注 mp4）
+            if response.status == 200 and ('video/mp4' in response.headers.get('content-type', '') or '.mp4' in response.url):
+                content_length = int(response.headers.get('content-length', 0))
+                url = response.url
+                
+                # 过滤掉太小的文件（小于 1MB 的通常是广告或图标特效）
+                if content_length > 1024 * 1024: 
+                    self.log(f"捕获视频流: 大小={content_length/1024/1024:.2f}MB, URL={url[:60]}...")
+                    self.video_candidates.append({
+                        'url': url,
+                        'size': content_length
+                    })
+                else:
+                    self.log(f"忽略小文件(可能是广告): 大小={content_length/1024}KB, URL={url[:60]}...")
+        except Exception as e:
+            # self.log(f"处理响应出错: {e}")
+            pass
 
     def run(self):
         with sync_playwright() as p:
-            # 启动浏览器，headless=True 表示无头模式（不显示浏览器界面），False 表示显示
-            print("正在启动浏览器...")
-            browser = p.chromium.launch(headless=True)
-            
-            # 创建上下文，设置 User-Agent 和 窗口大小
+            self.log(f"正在启动浏览器 (Headless={self.headless})...")
+            # 修改：关闭 headless 模式，模拟真实用户，减少被识别为机器人的概率
+            # 也可以方便观察发生了什么
+            try:
+                browser = p.chromium.launch(headless=self.headless, args=['--start-maximized'] if not self.headless else [])
+            except Exception as e:
+                self.log(f"启动浏览器失败: {e}")
+                self.log("尝试使用 playwright install 安装浏览器...")
+                return
+
+            # 创建上下文
             context = browser.new_context(
-                user_agent=self.headers["User-Agent"],
-                viewport={'width': 1920, 'height': 1080}
+                viewport={'width': 1920, 'height': 1080},
+                user_agent=self.headers["User-Agent"]
             )
             
-            page = context.new_page()
+            # 注入防检测脚本
+            # 适配 EXE 打包路径和开发环境路径
+            stealth_path = "stealth.min.js"
+            if getattr(sys, 'frozen', False):
+                stealth_path = os.path.join(sys._MEIPASS, "stealth.min.js")
+            
+            if os.path.exists(stealth_path):
+                self.log(f"加载反爬脚本: {stealth_path}")
+                context.add_init_script(path=stealth_path)
+            else:
+                self.log("警告: 未找到反爬脚本 stealth.min.js")
 
-            # 监听网络请求响应
+            page = context.new_page()
+            
+            # 监听网络请求
             page.on("response", self.handle_response)
 
-            print(f"正在访问: {self.url}")
+            self.log(f"正在访问: {self.url}")
             try:
-                page.goto(self.url, timeout=60000) # 增加超时时间
-                page.wait_for_load_state("networkidle") # 等待网络空闲
+                page.goto(self.url, timeout=60000)
             except Exception as e:
-                print(f"页面加载可能超时，继续尝试提取: {e}")
+                self.log(f"页面加载超时或出错: {e}")
 
-            # 获取页面标题作为文件名
+            # 等待页面加载，特别是视频元素
+            try:
+                page.wait_for_selector('video', timeout=15000)
+                # 多等待几秒，确保正片加载（有时候广告先播，正片后播）
+                time.sleep(5) 
+                
+                # 模拟鼠标移动，触发加载
+                page.mouse.move(100, 100)
+                page.mouse.move(200, 200)
+                time.sleep(2)
+            except:
+                self.log("等待视频元素超时")
+
+            # 获取标题
             title = page.title()
-            # 清理文件名非法字符
             title = re.sub(r'[\\/:*?"<>|]', '', title).strip()
             if not title or title == "抖音":
-                # 尝试从页面内容获取更准确的描述
                 try:
-                    desc_element = page.query_selector('h1') or page.query_selector('.desc')
-                    if desc_element:
-                        title = desc_element.inner_text()
-                        title = re.sub(r'[\\/:*?"<>|]', '', title).strip()
+                    desc = page.locator('.desc').first.inner_text()
+                    title = re.sub(r'[\\/:*?"<>|]', '', desc).strip()
                 except:
                     pass
             
             if not title:
                 title = f"douyin_{int(time.time())}"
-            
-            # 截断过长的标题
             if len(title) > 50:
                 title = title[:50]
-                
-            print(f"视频标题: {title}")
+            
+            self.log(f"视频标题: {title}")
 
-            # 如果监听网络请求没有获取到，尝试直接解析页面元素
-            if not self.video_url:
-                print("监听网络未获取到地址，尝试从页面元素解析...")
-                try:
-                    # 尝试查找 video 标签
-                    video_element = page.query_selector('video')
-                    if video_element:
-                        src = video_element.get_attribute('src')
-                        if src:
-                            # 处理 blob: 开头的地址（这种通常无法直接下载，需要更复杂的流处理，这里简单处理 http 开头的）
-                            if src.startswith('http'):
-                                self.video_url = src
-                            elif src.startswith('//'):
-                                self.video_url = 'https:' + src
-                except Exception as e:
-                    print(f"元素解析出错: {e}")
-
-            if self.video_url:
-                print(f"最终视频地址: {self.video_url}")
-                self.download_video(self.video_url, os.path.join(self.save_dir, f"{title}.mp4"))
+            # 策略优化：选择最大的视频文件
+            target_url = None
+            if self.video_candidates:
+                # 按大小排序，取最大的
+                self.video_candidates.sort(key=lambda x: x['size'], reverse=True)
+                target_url = self.video_candidates[0]['url']
+                self.log(f"从 {len(self.video_candidates)} 个候选视频中选择了最大的: {target_url[:60]}...")
             else:
-                print("抱歉，未能提取到视频下载链接。可能是因为：")
-                print("1. 视频需要登录才能观看")
-                print("2. 遇到了验证码")
-                print("3. 网络加载过慢")
-                print("建议：尝试将 headless=False 改为 True 观察浏览器行为。")
+                self.log("网络监听未捕获有效视频，尝试直接解析页面元素...")
+                try:
+                    video_elem = page.query_selector('video')
+                    if video_elem:
+                        src = video_elem.get_attribute('src')
+                        # 有时候 src 是 blob:，这种无法直接下载。如果是 http 开头则可以使用
+                        if src and src.startswith('http'):
+                            target_url = src
+                            self.log(f"从页面元素获取 URL: {target_url}")
+                        else:
+                            # 尝试获取 source 子标签
+                            sources = video_elem.query_selector_all('source')
+                            for s in sources:
+                                s_src = s.get_attribute('src')
+                                if s_src and s_src.startswith('http'):
+                                    target_url = s_src
+                                    break
+                except Exception as e:
+                    self.log(f"页面解析出错: {e}")
 
+            if target_url:
+                filename = f"{title}.mp4"
+                filepath = os.path.join(self.save_dir, filename)
+                self.download_video(target_url, filepath)
+            else:
+                self.log("未能获取到视频链接。可能原因：")
+                self.log("1. 视频是 blob 格式（加密流），当前爬虫暂不支持")
+                self.log("2. 反爬虫检测拦截了请求")
+                self.log("3. 需要登录")
+
+            # 调试模式下不自动关闭，方便看一眼
+            # browser.close() 
+            # 还是关闭吧，不然进程残留
             browser.close()
 
     def download_video(self, url, filepath):
-        print(f"开始下载: {filepath}")
+        self.log(f"开始下载: {filepath}")
         try:
             # 抖音视频链接通常需要带上 headers 避免 403
             response = requests.get(url, headers=self.headers, stream=True)
@@ -123,12 +195,13 @@ class DouyinSpider:
                             # 简单的进度显示
                             if total_size > 0:
                                 percent = (downloaded_size / total_size) * 100
-                                print(f"\r下载进度: {percent:.2f}%", end="")
-                print(f"\n下载完成！文件已保存至: {filepath}")
+                                # 进度条通常不通过 log 输出，避免刷屏，这里简单处理
+                                # self.log(f"\r下载进度: {percent:.2f}%")
+                self.log(f"下载完成！文件已保存至: {filepath}")
             else:
-                print(f"下载失败，状态码: {response.status_code}")
+                self.log(f"下载失败，状态码: {response.status_code}")
         except Exception as e:
-            print(f"下载出错: {e}")
+            self.log(f"下载出错: {e}")
 
 def extract_url_from_text(text):
     """
